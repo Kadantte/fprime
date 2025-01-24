@@ -14,13 +14,13 @@
 #define UdpComponentImpl_HPP
 
 #include <Drv/Ip/IpSocket.hpp>
-#include <Drv/Ip/SocketReadTask.hpp>
+#include <Drv/Ip/SocketComponentHelper.hpp>
 #include <Drv/Ip/UdpSocket.hpp>
-#include "Drv/ByteStreamDriverModel/ByteStreamDriverComponentAc.hpp"
+#include "Drv/Udp/UdpComponentAc.hpp"
 
 namespace Drv {
 
-class UdpComponentImpl : public ByteStreamDriverModelComponentBase, public SocketReadTask {
+class UdpComponentImpl : public UdpComponentBase, public SocketComponentHelper {
   public:
     // ----------------------------------------------------------------------
     // Construction, initialization, and destruction
@@ -32,17 +32,10 @@ class UdpComponentImpl : public ByteStreamDriverModelComponentBase, public Socke
      */
     UdpComponentImpl(const char* const compName);
 
-
-    /**
-     * \brief Initialize this component
-     * \param instance: instance number of this component
-     */
-    void init(const NATIVE_INT_TYPE instance = 0);
-
     /**
      * \brief Destroy the component
      */
-    ~UdpComponentImpl(void);
+    ~UdpComponentImpl();
 
     // ----------------------------------------------------------------------
     // Helper methods to start and stop socket
@@ -52,7 +45,7 @@ class UdpComponentImpl : public ByteStreamDriverModelComponentBase, public Socke
      * \brief Configures the Udp send settings but does not open the connection
      *
      * The UdpComponent may need to send to a remote UDP port. This call configures the hostname, port and send
-     * timeouts for that socket connection. This call should be preformed on system startup before send is called.
+     * timeouts for that socket connection. This call should be performed on system startup before send is called.
      * Note: hostname must be a dot-notation IP address of the form "x.x.x.x". DNS translation is left up
      * to the user.
      *
@@ -72,23 +65,28 @@ class UdpComponentImpl : public ByteStreamDriverModelComponentBase, public Socke
      * \brief Configures the Udp receive settings but does not open the connection
      *
      * The UdpComponent may need to receive from a remote udp port. This call configures the hostname and port of that
-     * source. This call should be preformed on system startup before recv or send are called. Note: hostname must be a
+     * source. This call should be performed on system startup before recv or send are called. Note: hostname must be a
      * dot-notation IP address of the form "x.x.x.x". DNS translation is left up to the user.
      *
      * \param hostname: ip address of remote tcp server in the form x.x.x.x
      * \param port: port of remote tcp server
+     * \param buffer_size: size of the buffer to be allocated. Defaults to 1024.
      *  \return status of the configure
      */
-    SocketIpStatus configureRecv(const char* hostname, const U16 port);
+    SocketIpStatus configureRecv(const char* hostname, const U16 port, FwSizeType buffer_size = 1024);
 
     /**
-     * \brief **not supported**
+     * \brief get the port being received on
      *
-     * IP based ByteStreamDrivers don't support polling.
+     * Most useful when receive was configured to use port "0", this will return the port used for receiving data after
+     * a port has been determined. Will return 0 if the connection has not been setup.
+     *
+     * \return receive port
      */
-    Drv::PollStatus poll_handler(const NATIVE_INT_TYPE portNum, Fw::Buffer& fwBuffer);
+    U16 getRecvPort();
 
-  PROTECTED:
+
+PROTECTED:
     // ----------------------------------------------------------------------
     // Implementations for socket read task virtual methods
     // ----------------------------------------------------------------------
@@ -106,7 +104,7 @@ class UdpComponentImpl : public ByteStreamDriverModelComponentBase, public Socke
     /**
      * \brief returns a buffer to fill with data
      *
-     * Gets a reference to the a buffer to fill with data. This allows the component to determine how to provide a
+     * Gets a reference to a buffer to fill with data. This allows the component to determine how to provide a
      * buffer and the socket read task just fills said buffer.
      *
      * \return Fw::Buffer to fill with data
@@ -114,7 +112,7 @@ class UdpComponentImpl : public ByteStreamDriverModelComponentBase, public Socke
     Fw::Buffer getBuffer();
 
     /**
-     * \brief sends a buffer to filled with data
+     * \brief sends a buffer to be filled with data
      *
      * Sends the buffer gotten by getBuffer that has now been filled with data. This is used to delegate to the
      * component how to send back the buffer. Ignores buffers with error status error.
@@ -152,6 +150,8 @@ class UdpComponentImpl : public ByteStreamDriverModelComponentBase, public Socke
     Drv::SendStatus send_handler(const NATIVE_INT_TYPE portNum, Fw::Buffer& fwBuffer);
 
     Drv::UdpSocket m_socket; //!< Socket implementation
+
+    FwSizeType m_allocation_size; //!< Member variable to store the buffer size
 };
 
 }  // end namespace Drv

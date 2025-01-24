@@ -1,4 +1,3 @@
-\page SvcBufferManagerComponent Svc::BufferManager Component
 # Svc::BufferManager
 
 ## 1 Introduction
@@ -41,16 +40,16 @@ This fixed size is never exceeded by the outstanding allocations.
 Name | Type | Role
 -----| ---- | ----
 `timeCaller` | `Fw::Time` | TimeGet
-`tlmOut` | [`Fw::Tlm`](../../../Fw/Tlm/docs/sdd.html) | Telemetry
-`eventOut` | [`Fw::LogEvent`](../../../Fw/Log/docs/sdd.html) | LogEvent
+`tlmOut` | [`Fw::Tlm`](../../../Fw/Tlm/docs/sdd.md) | Telemetry
+`eventOut` | [`Fw::LogEvent`](../../../Fw/Log/docs/sdd.md) | LogEvent
 
 #### 3.3.2 Component-Specific Ports
 
 Name | Type | Kind | Purpose
 ---- | ---- | ---- | ----
-`bufferSendIn` | [`Fw::BufferSend`](../../../Fw/Buffer/docs/sdd.html) | guarded input | Receives buffers for deallocation
-`bufferGetCallee` | [`Fw::BufferGet`](../../../Fw/Buffer/docs/sdd.html) | guarded input (callee) | Receives requests for allocated buffers and returns the buffers
-`schedIn` | [`Svc::Sched`](../../../Svc/Sched/docs/sdd.html) | sync input (callee) | writes telemetry values (optional, if the user doesn't need BufferManager telemetry)
+`bufferSendIn` | [`Fw::BufferSend`](../../../Fw/Buffer/docs/sdd.md) | guarded input | Receives buffers for deallocation
+`bufferGetCallee` | [`Fw::BufferGet`](../../../Fw/Buffer/docs/sdd.md) | guarded input (callee) | Receives requests for allocated buffers and returns the buffers
+`schedIn` | [`Svc::Sched`](../../../Svc/Sched/docs/sdd.md) | sync input (callee) | writes telemetry values (optional, if the user doesn't need BufferManager telemetry)
 
 ### 3.4 Constants
 
@@ -83,7 +82,7 @@ When `BufferManager` receives a request for a buffer of size *s* on
 When `BufferManager` receives notification of a free buffer on
 [*bufferSendIn*](#bufferSendIn), it carries out the following steps:
 
-1. Check to see if it an empty buffer. If so, issue a WARNING_LO event and return.
+1. Check to see if it is an empty buffer. If so, issue a WARNING_LO event and return.
 2. Extract the manager ID and buffer ID from the context member of the `Fw::Buffer` instance.
 3. If they are valid, use the buffer ID to find the allocated buffer.
 4. Clear the "allocated" flag to make the buffer available again.
@@ -106,7 +105,18 @@ component.
 3. The receiving component uses the data in *B*. When done, it sends *B* back
 to the [`bufferSendIn`](#bufferSendIn) port of `BufferManager` for deallocation.
 
-![`BufferManager` Sending a Buffer](img/SendingABuffer.jpg "SequenceDiagram")
+```mermaid
+sequenceDiagram
+    Sending Component->>BufferManager: Request buffer
+    activate Sending Component
+    activate BufferManager
+    Sending Component->>Receiving Component: Send buffer
+    activate Receiving Component
+    deactivate Sending Component
+    Receiving Component->>BufferManager: Send buffer
+    deactivate BufferManager
+    deactivate Receiving Component
+```
 
 ### 3.8 Assertions
 

@@ -11,21 +11,18 @@
 // ======================================================================
 
 #include <Drv/LinuxSpiDriver/LinuxSpiDriverComponentImpl.hpp>
-#include "Fw/Types/BasicTypes.hpp"
+#include <FpConfig.hpp>
 #include <Fw/Types/Assert.hpp>
 
-#include <stdint.h>
+#include <cstdint>
 #include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/types.h>
 #include <linux/spi/spidev.h>
-#include <errno.h>
-
-//#define DEBUG_PRINT(x,...) printf(x,##__VA_ARGS__); fflush(stdout)
-#define DEBUG_PRINT(x,...)
+#include <cerrno>
 
 namespace Drv {
 
@@ -41,13 +38,11 @@ namespace Drv {
             return;
         }
 
-        DEBUG_PRINT("Writing %d bytes to SPI\n",writeBuffer.getSize());
-
         spi_ioc_transfer tr;
         // Zero for unused fields:
         memset(&tr, 0, sizeof(tr));
-        tr.tx_buf = (U64)writeBuffer.getData();
-        tr.rx_buf = (U64)readBuffer.getData();
+        tr.tx_buf = reinterpret_cast<__u64>(writeBuffer.getData());
+        tr.rx_buf = reinterpret_cast<__u64>(readBuffer.getData());
         tr.len = writeBuffer.getSize();
 /*
             .speed_hz = 0,
@@ -66,13 +61,12 @@ namespace Drv {
         }
         this->m_bytes += readBuffer.getSize();
         this->tlmWrite_SPI_Bytes(this->m_bytes);
-        return;
-
     }
 
     bool LinuxSpiDriverComponentImpl::open(NATIVE_INT_TYPE device,
                                            NATIVE_INT_TYPE select,
-                                           SpiFrequency clock) {
+                                           SpiFrequency clock,
+                                           SpiMode spiMode) {
 
         this->m_device = device;
         this->m_select = select;
@@ -84,40 +78,50 @@ namespace Drv {
         snprintf(devName,sizeof(devName),"/dev/spidev%d.%d",device,select);
         // null terminate
         devName[sizeof(devName)-1] = 0;
-        DEBUG_PRINT("Opening SPI device %s\n",devName);
 
         fd = ::open(devName, O_RDWR);
         if (fd == -1) {
-            DEBUG_PRINT("open SPI device %d.%d failed. %d\n",device,select,errno);
             this->log_WARNING_HI_SPI_OpenError(device,select,fd);
             return false;
-        } else {
-            DEBUG_PRINT("Successfully opened SPI device %s fd %d\n",devName,fd);
         }
 
         this->m_fd = fd;
 
         // Configure:
         /*
-         * SPI Mode 0
+         * SPI Mode 0, 1, 2, 3
          */
-        U8 mode = SPI_MODE_0; // Mode 0 (CPOL = 0, CPHA = 0)
+
+        U8 mode; // Mode Select (CPOL = 0/1, CPHA = 0/1)
+        switch(spiMode) {
+            case SpiMode::SPI_MODE_CPOL_LOW_CPHA_LOW:
+                mode = SPI_MODE_0;
+                break;
+            case SpiMode::SPI_MODE_CPOL_LOW_CPHA_HIGH:
+                mode = SPI_MODE_1;
+                break;
+            case SpiMode::SPI_MODE_CPOL_HIGH_CPHA_LOW:
+                mode = SPI_MODE_2;
+                break;
+            case SpiMode::SPI_MODE_CPOL_HIGH_CPHA_HIGH:
+                mode = SPI_MODE_3;
+                break;
+            default:
+                //Assert if the device SPI Mode is not in the correct range
+                FW_ASSERT(0, spiMode);                
+                break;
+        }
+
         ret = ioctl(fd, SPI_IOC_WR_MODE, &mode);
         if (ret == -1) {
-            DEBUG_PRINT("ioctl SPI_IOC_WR_MODE fd %d failed. %d\n",fd,errno);
             this->log_WARNING_HI_SPI_ConfigError(device,select,ret);
             return false;
-        } else {
-            DEBUG_PRINT("SPI fd %d WR mode successfully configured to %d\n",fd,mode);
         }
 
         ret = ioctl(fd, SPI_IOC_RD_MODE, &mode);
         if (ret == -1) {
-            DEBUG_PRINT("ioctl SPI_IOC_RD_MODE fd %d failed. %d\n",fd,errno);
             this->log_WARNING_HI_SPI_ConfigError(device,select,ret);
             return false;
-        } else {
-            DEBUG_PRINT("SPI fd %d RD mode successfully configured to %d\n",fd,mode);
         }
 
         /*
@@ -126,20 +130,14 @@ namespace Drv {
         U8 bits = 8;
         ret = ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
         if (ret == -1) {
-            DEBUG_PRINT("ioctl SPI_IOC_WR_BITS_PER_WORD fd %d failed. %d\n",fd,errno);
             this->log_WARNING_HI_SPI_ConfigError(device,select,ret);
             return false;
-        } else {
-            DEBUG_PRINT("SPI fd %d WR bits per word successfully configured to %d\n",fd,bits);
         }
 
         ret = ioctl(fd, SPI_IOC_RD_BITS_PER_WORD, &bits);
         if (ret == -1) {
-            DEBUG_PRINT("ioctl SPI_IOC_RD_BITS_PER_WORD fd %d failed. %d\n",fd,errno);
             this->log_WARNING_HI_SPI_ConfigError(device,select,ret);
             return false;
-        } else {
-            DEBUG_PRINT("SPI fd %d RD bits per word successfully configured to %d\n",fd,bits);
         }
 
         /*
@@ -147,28 +145,21 @@ namespace Drv {
          */
         ret = ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &clock);
         if (ret == -1) {
-            DEBUG_PRINT("ioctl SPI_IOC_WR_MAX_SPEED_HZ fd %d failed. %d\n",fd,errno);
             this->log_WARNING_HI_SPI_ConfigError(device,select,ret);
             return false;
-        } else {
-            DEBUG_PRINT("SPI fd %d WR freq successfully configured to %d\n",fd,clock);
         }
 
         ret = ioctl(fd, SPI_IOC_RD_MAX_SPEED_HZ, &clock);
         if (ret == -1) {
-           DEBUG_PRINT("ioctl SPI_IOC_RD_MAX_SPEED_HZ fd %d failed. %d\n",fd,errno);
            this->log_WARNING_HI_SPI_ConfigError(device,select,ret);
            return false;
-        } else {
-           DEBUG_PRINT("SPI fd %d RD freq successfully configured to %d\n",fd,clock);
         }
 
         return true;
 
     }
 
-    LinuxSpiDriverComponentImpl::~LinuxSpiDriverComponentImpl(void) {
-        DEBUG_PRINT("Closing SPI device %d\n",this->m_fd);
+    LinuxSpiDriverComponentImpl::~LinuxSpiDriverComponentImpl() {
         (void) close(this->m_fd);
     }
 
