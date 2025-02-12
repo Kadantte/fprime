@@ -12,11 +12,10 @@
 #ifndef BUFFER_HPP_
 #define BUFFER_HPP_
 
-#include <Fw/Types/BasicTypes.hpp>
+#include <FpConfig.hpp>
 #include <Fw/Types/Serializable.hpp>
 #if FW_SERIALIZABLE_TO_STRING
     #include <Fw/Types/StringType.hpp>
-    #include <stdio.h> // snprintf
     #ifdef BUILD_UT
         #include <iostream>
         #include <Fw/Types/String.hpp>
@@ -37,7 +36,7 @@ namespace Fw {
 //!
 //! Fw::Buffer also comes with functions to return a representation of the data as a SerializeBufferBase. These two
 //! functions allow easy access to the data as if it were a serialize or deserialize buffer. This can aid in writing and
-//! reading the wrapped data where as the standard serialize and deserialize methods treat the data as a pointer to
+//! reading the wrapped data whereas the standard serialize and deserialize methods treat the data as a pointer to
 //! prevent excessive copying.
 //!
 class Buffer : public Fw::Serializable {
@@ -117,6 +116,10 @@ public:
     // ----------------------------------------------------------------------
     // Accessor functions
     // ----------------------------------------------------------------------
+
+    //! Returns true if the buffer is valid (data pointer != nullptr and size > 0)
+    //!
+    bool isValid() const;
 
     //! Returns wrapped data pointer
     //!

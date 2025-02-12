@@ -1,4 +1,3 @@
-\page SvcHealthComponent Svc::Health Component
 # Svc::Health Component
 
 ## 1. Introduction
@@ -35,10 +34,10 @@ The Svc::Health component uses the following port types:
 
 Port Data Type | Name | Direction | Kind | Usage
 -------------- | ---- | --------- | ---- | -----
-[`Svc::Ping`](../../../Svc/Ping/docs/sdd.html) | PingSend | Output | n/a | Send ping requests from components
-[`Svc::Ping`](../../../Svc/Ping/docs/sdd.html) | PingReturn | Input | Asynchronous | Receive ping responses from components
-[`Svc::Sched`](../../../Svc/Sched/docs/sdd.html) | Run | Input | Synchronous | Execute periodic behavior
-[`Svc::WatchDog`](../../../Svc/WatchDog/docs/sdd.html) | Wdog | Output | n/a | Send ping requests from components
+[`Svc::Ping`](../../../Svc/Ping/docs/sdd.md) | PingSend | Output | n/a | Send ping requests from components
+[`Svc::Ping`](../../../Svc/Ping/docs/sdd.md) | PingReturn | Input | Asynchronous | Receive ping responses from components
+[`Svc::Sched`](../../../Svc/Sched/docs/sdd.md) | Run | Input | Synchronous | Execute periodic behavior
+[`Svc::WatchDog`](../../../Svc/WatchDog/docs/sdd.md) | Wdog | Output | n/a | Send ping requests from components
 
 ### 3.2 Functional Description
 
@@ -79,11 +78,11 @@ TBD
 
 ## 5. Module Checklists
 
-Document | Link
--------- | ----
-Design Checklist | [Link](Checklist_Design.xlsx)
-Code Checklist | [Link](Checklist_Code.xlsx)
-Unit Test Checklist | [Link](Checklist_Unit_test.xls)
+Checklist |
+-------- |
+[Design](Checklist_Design.xlsx) |
+[Code](Checklist_Code.xlsx) |
+[Unit Test](Checklist_Unit_Test.xls) |
 
 ## 6. Unit Testing
 The Health unit tests are designed to test interfaces and functionality with the available ports, command processing, telemetry output, EVR and data product generation.
@@ -99,9 +98,9 @@ Off-nominal testing contains cases which deal with ping-related issues such as l
 
 ## 6.1 Unit Test Descriptions
 ### 6.1.1 Nominal Telemetry Test
-When the Health component's schedIn handler is called, each ping entry in the user provided table is check if it's enabled. If the entry is enabled and empty, a ping is sent out through its corresponding port. If the entry is awaiting a ping response, its counter is checked against a warning threshold and the counter is decremented. If the warning threshold is reached, an EVR and telemetry write are generated. If the fault threshold is reached, a fatal EVR is generated. 
+When the Health component's schedIn handler is called, each ping entry in the user provided table is checked if it's enabled. If the entry is enabled and empty, a ping is sent out through its corresponding port. If the entry is awaiting a ping response, its counter is checked against a warning threshold and the counter is decremented. If the warning threshold is reached, an EVR and telemetry write are generated. If the fault threshold is reached, a fatal EVR is generated. 
 
-This test invokes the schedIn handler for multiple iterations with a provided tables of three ping entries. To test nominal conditions, when a ping is received through the test port, a valid ping return is sent back to the component.  
+This test invokes the schedIn handler for multiple iterations with a provided table of three ping entries. To test nominal conditions, when a ping is received through the test port, a valid ping return is sent back to the component.  
 
 For this nominal condition, no EVRs or telemetry are expected.
 
@@ -138,7 +137,7 @@ This test verifies the requirement that the component shall stroke a watchdog po
 Requirement verified: `HTH-007`
 
 ### 6.1.8 Nominal Command Test
-This test verifies the functionally of all the provided health commands including the enable/disable monitoring of the ping entries as well ass updating timeouts. All commands are validated and verified with nominal inputs. 
+This test verifies the functionally of all the provided health commands including the enable/disable monitoring of the ping entries as well as updating timeouts. All commands are validated and verified with nominal inputs. 
 
 ### 6.1.9 Nominal Command and Telemetry Test
 This test is similar to `6.1.8`, but it includes a nominal running of the SchedIn handler while handling incoming commands. 

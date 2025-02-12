@@ -1,4 +1,3 @@
-\page UtilsHashClass Utils::Hash Class
 # Utils::Hash
 
 This directory contains a generic interface for creating hashes 
@@ -16,7 +15,7 @@ Currently, one such implementation exists in `Utils/Hash/openssl/` which provide
 hash using the openssl library. Another implementation is also provided which calculates a 
 32-bit CRC32, which depends on no external libraries.
 
-A specific implementation can be selecting by modifying the `HashConfig.hpp` file.
+A specific implementation can be selected by modifying the `HashConfig.hpp` file.
 
 ## Using `hash`
 
