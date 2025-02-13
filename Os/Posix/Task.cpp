@@ -1,231 +1,254 @@
-#include <Os/Task.hpp>
-#include <Fw/Types/Assert.hpp>
-
-
-#ifdef TGT_OS_TYPE_VXWORKS
-    #include <vxWorks.h>
-    #include <taskLib.h> // need it for VX_FP_TASK
-#else
-    #include <sys/types.h>
-    #include <unistd.h>
-#endif
-
+// ======================================================================
+// \title Os/Posix/Task.cpp
+// \brief implementation of Posix implementation of Os::Task
+// ======================================================================
+#include <cstring>
+#include <unistd.h>
+#include <climits>
+#include <cerrno>
 #include <pthread.h>
-#include <errno.h>
-#include <string.h>
-#include <time.h>
-#include <stdio.h>
-#include <Fw/Logger/Logger.hpp>
 
-typedef void* (*pthread_func_ptr)(void*);
-
-void* pthread_entry_wrapper(void* arg) {
-    FW_ASSERT(arg);
-    Os::Task::TaskRoutineWrapper *task = reinterpret_cast<Os::Task::TaskRoutineWrapper*>(arg);
-    FW_ASSERT(task->routine);
-    task->routine(task->arg);
-    return NULL;
-}
+#include "Fw/Logger/Logger.hpp"
+#include "Fw/Types/Assert.hpp"
+#include "Os/Task.hpp"
+#include "Os/Posix/Task.hpp"
+#include "Os/Posix/error.hpp"
 
 namespace Os {
-    Task::Task() : m_handle(0), m_identifier(0), m_affinity(-1), m_started(false), m_suspendedOnPurpose(false), m_routineWrapper() {
+namespace Posix {
+namespace Task {
+    std::atomic<bool> PosixTask::s_permissions_reported(false);
+    static const PlatformIntType SCHED_POLICY = SCHED_RR;
+
+    typedef void* (*pthread_func_ptr)(void*);
+
+    void* pthread_entry_wrapper(void* wrapper_pointer) {
+        FW_ASSERT(wrapper_pointer != nullptr);
+        Os::Task::TaskRoutineWrapper& wrapper = *reinterpret_cast<Os::Task::TaskRoutineWrapper*>(wrapper_pointer);
+        wrapper.run(&wrapper);
+        return nullptr;
     }
 
-    Task::TaskStatus Task::start(const Fw::StringBase &name, NATIVE_INT_TYPE identifier, NATIVE_INT_TYPE priority, NATIVE_INT_TYPE stackSize, taskRoutine routine, void* arg, NATIVE_INT_TYPE cpuAffinity) {
-        FW_ASSERT(routine);
-
-        this->m_name = "TP_";
-        this->m_name += name;
-#ifndef TGT_OS_TYPE_VXWORKS
-        char pid[40];
-        (void)snprintf(pid,sizeof(pid),".%d",getpid());
-        pid[sizeof(pid)-1] = 0;
-        this->m_name += pid;
-#endif
-        this->m_identifier = identifier;
-        Task::TaskStatus tStat = TASK_OK;
-
-        pthread_attr_t att;
-        // clear att; can cause issues
-        memset(&att,0,sizeof(att));
-
-        I32 stat = pthread_attr_init(&att);
-        if (stat != 0) {
-            Fw::Logger::logMsg("pthread_attr_init: (%d)(%d): %s\n",stat,errno, reinterpret_cast<POINTER_CAST>(strerror(stat)));
-        	return TASK_INVALID_PARAMS;
-        }
-#ifdef TGT_OS_TYPE_VXWORKS
-        stat = pthread_attr_setstacksize(&att,stackSize);
-        if (stat != 0) {
-            return TASK_INVALID_STACK;
-        }
-        stat = pthread_attr_setschedpolicy(&att,SCHED_FIFO);
-        if (stat != 0) {
-        	return TASK_INVALID_PARAMS;
-        }
-        stat = pthread_attr_setname(&att,(char*)this->m_name.toChar());
-        if (stat != 0) {
-        	return TASK_INVALID_PARAMS;
-        }
-        stat = pthread_attr_setinheritsched(&att,PTHREAD_EXPLICIT_SCHED); // needed to set inheritance according to WR docs
-        if (stat != 0) {
-        	return TASK_INVALID_PARAMS;
-        }
-        sched_param schedParam;
-        memset(&schedParam,0,sizeof(sched_param));
-        schedParam.sched_priority = priority;
-        stat = pthread_attr_setschedparam(&att,&schedParam);
-        if (stat != 0) {
-        	return TASK_INVALID_PARAMS;
-        }
-        stat = pthread_attr_setopt(&att,VX_FP_TASK);
-        if (stat != 0) {
-        	return TASK_INVALID_PARAMS;
-        }
-#elif defined TGT_OS_TYPE_LINUX
-#if !defined BUILD_CYGWIN // cygwin doesn't support this call
-        stat = pthread_attr_setschedpolicy(&att,SCHED_RR);
-        if (stat != 0) {
-            Fw::Logger::logMsg("pthread_attr_setschedpolicy: %s\n", reinterpret_cast<POINTER_CAST>(strerror(errno)));
-            return TASK_INVALID_PARAMS;
-        }
-#endif
-#elif defined TGT_OS_TYPE_RTEMS
-        stat = pthread_attr_setstacksize(&att,stackSize);
-        if (stat != 0) {
-            return TASK_INVALID_STACK;
-        }
-        stat = pthread_attr_setschedpolicy(&att,SCHED_FIFO);
-        if (stat != 0) {
-            return TASK_INVALID_PARAMS;
-        }
-        stat = pthread_attr_setinheritsched(&att,PTHREAD_EXPLICIT_SCHED); // needed to set inheritance according to WR docs
-        if (stat != 0) {
-            return TASK_INVALID_PARAMS;
-        }
-        sched_param schedParam;
-        memset(&schedParam,0,sizeof(sched_param));
-        schedParam.sched_priority = priority;
-        stat = pthread_attr_setschedparam(&att,&schedParam);
-        if (stat != 0) {
-            return TASK_INVALID_PARAMS;
-        }
-#elif defined TGT_OS_TYPE_DARWIN
+    PlatformIntType set_stack_size(pthread_attr_t& attributes, const Os::Task::Arguments& arguments) {
+        PlatformIntType status = PosixTaskHandle::SUCCESS;
+        FwSizeType stack = arguments.m_stackSize;
+// Check for stack size multiple of page size or skip when the function
+// is unavailable.
+#ifdef _SC_PAGESIZE
+        long page_size = sysconf(_SC_PAGESIZE);
 #else
-        #error Unsupported OS!
+        long page_size = -1; // Force skip and warning
 #endif
-
-        // If a registry has been registered, register task
-        if (Task::s_taskRegistry) {
-            Task::s_taskRegistry->addTask(this);
+        if (page_size <= 0) {
+            Fw::Logger::log(
+                    "[WARNING] %s could not determine page size %s. Skipping stack-size check.\n",
+                    const_cast<CHAR*>(arguments.m_name.toChar()),
+                    strerror(errno)
+            );
+        }
+        else if ((stack % static_cast<FwSizeType>(page_size)) != 0) {
+            // Round-down to nearest page size multiple
+            FwSizeType rounded = (stack / static_cast<FwSizeType>(page_size)) * static_cast<FwSizeType>(page_size);
+            Fw::Logger::log(
+                    "[WARNING] %s stack size of %" PRI_FwSizeType " is not multiple of page size %ld, rounding to %" PRI_FwSizeType "\n",
+                    const_cast<CHAR*>(arguments.m_name.toChar()),
+                    stack,
+                    page_size,
+                    rounded
+            );
+            stack = rounded;
         }
 
-        pthread_t* tid = new pthread_t;
-        this->m_routineWrapper.routine = routine;
-        this->m_routineWrapper.arg = arg;
-
-        stat = pthread_create(tid,&att,pthread_entry_wrapper,&this->m_routineWrapper);
-
-        switch (stat) {
-            case 0:
-                this->m_handle = (POINTER_CAST)tid;
-                Task::s_numTasks++;
-                break;
-            case EINVAL:
-                delete tid;
-                Fw::Logger::logMsg("pthread_create: %s\n", reinterpret_cast<POINTER_CAST>(strerror(errno)));
-                tStat = TASK_INVALID_PARAMS;
-                break;
-            default:
-                delete tid;
-                tStat = TASK_UNKNOWN_ERROR;
-                break;
+        // Clamp invalid stack sizes
+        if (stack <= static_cast<FwSizeType>(PTHREAD_STACK_MIN)) {
+            Fw::Logger::log(
+                    "[WARNING] %s stack size of %" PRI_FwSizeType "  is too small, clamping to %" PRI_FwSizeType "\n",
+                    const_cast<CHAR*>(arguments.m_name.toChar()),
+                    stack,
+                    static_cast<FwSizeType>(PTHREAD_STACK_MIN)
+            );
+            stack = static_cast<FwSizeType>(PTHREAD_STACK_MIN);
         }
-
-        (void)pthread_attr_destroy(&att);
-
-        return tStat;
+        status = pthread_attr_setstacksize(&attributes, static_cast<size_t>(stack));
+        return status;
     }
 
-    Task::TaskStatus Task::delay(NATIVE_UINT_TYPE milliseconds)
-    {
-        timespec time1;
+    PlatformIntType set_priority_params(pthread_attr_t& attributes, const Os::Task::Arguments& arguments) {
+        const FwSizeType min_priority = static_cast<FwSizeType>(sched_get_priority_min(SCHED_POLICY));
+        const FwSizeType max_priority = static_cast<FwSizeType>(sched_get_priority_max(SCHED_POLICY));
+        PlatformIntType status = PosixTaskHandle::SUCCESS;
+        FwSizeType priority = arguments.m_priority;
+        // Clamp to minimum priority
+        if (priority < min_priority) {
+            Fw::Logger::log("[WARNING] %s low task priority of %" PRI_FwSizeType " clamped to %" PRI_FwSizeType "\n",
+                               const_cast<CHAR*>(arguments.m_name.toChar()),
+                               priority,
+                               min_priority);
+            priority = min_priority;
+        }
+        // Clamp to maximum priority
+        else if (priority > max_priority) {
+            Fw::Logger::log("[WARNING] %s high task priority of %" PRI_FwSizeType " clamped to %" PRI_FwSizeType "\n",
+                               const_cast<CHAR*>(arguments.m_name.toChar()),
+                               priority,
+                               max_priority);
+            priority = max_priority;
+        }
 
-        time1.tv_sec = milliseconds/1000;
-        time1.tv_nsec = (milliseconds%1000)*1000000;
+        // Set attributes required for priority
+        status = pthread_attr_setschedpolicy(&attributes, SCHED_POLICY);
+        if (status == PosixTaskHandle::SUCCESS) {
+            status = pthread_attr_setinheritsched(&attributes, PTHREAD_EXPLICIT_SCHED);
+        }
+        if (status == PosixTaskHandle::SUCCESS) {
+            sched_param schedParam;
+            memset(&schedParam, 0, sizeof(sched_param));
+            schedParam.sched_priority = static_cast<PlatformIntType>(priority);
+            status = pthread_attr_setschedparam(&attributes, &schedParam);
+        }
+        return status;
+    }
 
-        timespec time2;
-        time2.tv_sec = 0;
-        time2.tv_nsec = 0;
+    PlatformIntType set_cpu_affinity(pthread_attr_t& attributes, const Os::Task::Arguments& arguments) {
+        PlatformIntType status = 0;
+// pthread_attr_setaffinity_np is a non-POSIX function. Notably, it is not available on musl.
+// Limit its use to builds that involve glibc, on Linux, with _GNU_SOURCE defined.
+// That's the circumstance in which we expect this feature to work.
+#if defined(TGT_OS_TYPE_LINUX) && defined(__GLIBC__) && defined(_GNU_SOURCE)
+        const FwSizeType affinity = arguments.m_cpuAffinity;
+        cpu_set_t cpu_set;
+        CPU_ZERO(&cpu_set);
+        CPU_SET(static_cast<PlatformIntType>(affinity), &cpu_set);
 
-        timespec* sleepTimePtr = &time1;
-        timespec* remTimePtr = &time2;
+        // According to the man-page this function sets errno rather than returning an error status like other functions
+        status = pthread_attr_setaffinity_np(&attributes, sizeof(cpu_set_t), &cpu_set);
+        status = (status == PosixTaskHandle::SUCCESS) ? status : errno;
+#else
+            Fw::Logger::log("[WARNING] %s setting CPU affinity is only available with GNU pthreads\n",
+                            const_cast<CHAR*>(arguments.m_name.toChar()));
+#endif
+        return status;
+    }
 
-        while (true) {
-            int stat = nanosleep(sleepTimePtr,remTimePtr);
-            if (0 == stat) {
-                return TASK_OK;
-            } else { // check errno
-                if (EINTR == errno) { // swap pointers
-                    timespec* temp = remTimePtr;
-                    remTimePtr = sleepTimePtr;
-                    sleepTimePtr = temp;
-                    continue; // if interrupted, just continue
-                } else {
-                    return TASK_DELAY_ERROR;
-                }
+    Os::Task::Status PosixTask::create(const Os::Task::Arguments& arguments, const PosixTask::PermissionExpectation permissions) {
+        PlatformIntType pthread_status = PosixTaskHandle::SUCCESS;
+        PosixTaskHandle& handle = this->m_handle;
+        const bool expect_permission = (permissions == EXPECT_PERMISSION);
+        // Initialize and clear pthread attributes
+        pthread_attr_t attributes;
+        memset(&attributes, 0, sizeof(attributes));
+        pthread_status = pthread_attr_init(&attributes);
+        if ((arguments.m_stackSize != Os::Task::TASK_DEFAULT) && (expect_permission) && (pthread_status == PosixTaskHandle::SUCCESS)) {
+            pthread_status = set_stack_size(attributes, arguments);
+        }
+        if ((arguments.m_priority != Os::Task::TASK_DEFAULT) && (expect_permission) && (pthread_status == PosixTaskHandle::SUCCESS)) {
+            pthread_status = set_priority_params(attributes, arguments);
+        }
+        if ((arguments.m_cpuAffinity != Os::Task::TASK_DEFAULT) && (expect_permission) && (pthread_status == PosixTaskHandle::SUCCESS)) {
+            pthread_status = set_cpu_affinity(attributes, arguments);
+        }
+        if (pthread_status == PosixTaskHandle::SUCCESS) {
+            pthread_status = pthread_create(&handle.m_task_descriptor, &attributes, pthread_entry_wrapper,
+                                            arguments.m_routine_argument);
+        }
+        // Successful execution of all precious steps will result in a valid task handle
+        if (pthread_status == PosixTaskHandle::SUCCESS) {
+            handle.m_is_valid = true;
+        }
+
+        (void) pthread_attr_destroy(&attributes);
+        return Posix::posix_status_to_task_status(pthread_status);
+    }
+
+    void PosixTask::onStart() {}
+
+    Os::Task::Status PosixTask::start(const Arguments& arguments) {
+        FW_ASSERT(arguments.m_routine != nullptr);
+
+        // Try to create thread with assuming permissions
+        Os::Task::Status status = this->create(arguments, PermissionExpectation::EXPECT_PERMISSION);
+        // Failure due to permission automatically retried
+        if (status == Os::Task::Status::ERROR_PERMISSION) {
+            if (not PosixTask::s_permissions_reported) {
+                Fw::Logger::log("\n");
+                Fw::Logger::log("[NOTE] Task Permissions:\n");
+                Fw::Logger::log("[NOTE]\n");
+                Fw::Logger::log("[NOTE] You have insufficient permissions to create a task with priority and/or cpu affinity.\n");
+                Fw::Logger::log("[NOTE] A task without priority and affinity will be created.\n");
+                Fw::Logger::log("[NOTE]\n");
+                Fw::Logger::log("[NOTE] There are three possible resolutions:\n");
+                Fw::Logger::log("[NOTE] 1. Use tasks without priority and affinity using parameterless start()\n");
+                Fw::Logger::log("[NOTE] 2. Run this executable as a user with task priority permission\n");
+                Fw::Logger::log("[NOTE] 3. Grant capability with \"setcap 'cap_sys_nice=eip'\" or equivalent\n");
+                Fw::Logger::log("\n");
+                PosixTask::s_permissions_reported = true;
             }
+            // Fallback with no permission
+            status = this->create(arguments, PermissionExpectation::EXPECT_NO_PERMISSION);
+        } else if (status != Os::Task::Status::OP_OK) {
+            Fw::Logger::log("[ERROR] Failed to create task with status: %d",
+                            static_cast<PlatformIntType>(status));
         }
-
-        return TASK_OK; // for coverage analysis
-
+        return status;
     }
 
-
-    Task::~Task() {
-    	if (this->m_handle) {
-    		delete (pthread_t*)this->m_handle;
-    	}
-        // If a registry has been registered, remove task
-        if (Task::s_taskRegistry) {
-            Task::s_taskRegistry->removeTask(this);
+    Os::Task::Status PosixTask::join() {
+        Os::Task::Status status = Os::Task::Status::JOIN_ERROR;
+        if (not this->m_handle.m_is_valid) {
+            status = Os::Task::Status::INVALID_HANDLE;
+        } else {
+            PlatformIntType stat = ::pthread_join(this->m_handle.m_task_descriptor, nullptr);
+            status = (stat == PosixTaskHandle::SUCCESS) ? Os::Task::Status::OP_OK : Os::Task::Status::JOIN_ERROR;
         }
+        return status;
+    }
 
+    TaskHandle* PosixTask::getHandle() {
+        return &this->m_handle;
     }
 
     // Note: not implemented for Posix threads. Must be manually done using a mutex or other blocking construct as there
-    // is not top-level pthreads support for suspend and resume.
-
-    void Task::suspend(bool onPurpose) {
+    // is no top-level pthreads support for suspend and resume.
+    void PosixTask::suspend(Os::Task::SuspensionType suspensionType) {
         FW_ASSERT(0);
     }
 
-    void Task::resume(void) {
+    void PosixTask::resume() {
         FW_ASSERT(0);
     }
 
-    bool Task::isSuspended(void) {
-        FW_ASSERT(0);
-        return false;
+
+    Os::Task::Status PosixTask::_delay(Fw::TimeInterval interval) {
+        Os::Task::Status task_status = Os::Task::OP_OK;
+        timespec sleep_interval;
+        sleep_interval.tv_sec = interval.getSeconds();
+        sleep_interval.tv_nsec = interval.getUSeconds() * 1000;
+
+        timespec remaining_interval;
+        remaining_interval.tv_sec = 0;
+        remaining_interval.tv_nsec = 0;
+
+        while (true) {
+            PlatformIntType status = nanosleep(&sleep_interval, &remaining_interval);
+            // Success, return ok
+            if (0 == status) {
+                break;
+            }
+            // Interrupted, reset sleep and iterate
+            else if (EINTR == errno) {
+                sleep_interval = remaining_interval;
+                continue;
+            }
+            // Anything else is an error
+            else {
+                task_status = Os::Task::Status::DELAY_ERROR;
+                break;
+            }
+        }
+        return task_status;
     }
 
-    TaskId Task::getOsIdentifier(void) {
-        TaskId T;
-        return T;
-    }
 
-    Task::TaskStatus Task::join(void **value_ptr) {
-        NATIVE_INT_TYPE stat = 0;
-        if (!(this->m_handle)) {
-            return TASK_JOIN_ERROR;
-        }
-        stat = pthread_join(*((pthread_t*) this->m_handle), value_ptr);
-
-        if (stat != 0) {
-            return TASK_JOIN_ERROR;
-        }
-        else {
-            return TASK_OK;
-        }
-    }
-}
+} // end namespace Task
+} // end namespace Posix
+} // end namespace Os

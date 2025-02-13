@@ -1,9 +1,8 @@
-\page SvcAssertFatalAdapterComponent Svc::AssertFatalAdapter Component
 # Svc::AssertFatalAdapter Component
 
 ## 1. Introduction
 
-`Svc::AssertFatalAdapter` is an passive component that intercepts calls to FW_ASSERT and issues FATAL events for each.
+`Svc::AssertFatalAdapter` is a passive component that intercepts calls to FW_ASSERT and issues FATAL events for each.
 
 ## 2. Requirements
 

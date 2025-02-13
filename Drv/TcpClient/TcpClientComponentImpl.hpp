@@ -14,13 +14,13 @@
 #define TcpClientComponentImpl_HPP
 
 #include <Drv/Ip/IpSocket.hpp>
-#include <Drv/Ip/SocketReadTask.hpp>
+#include <Drv/Ip/SocketComponentHelper.hpp>
 #include <Drv/Ip/TcpClientSocket.hpp>
-#include "Drv/ByteStreamDriverModel/ByteStreamDriverComponentAc.hpp"
+#include "Drv/TcpClient/TcpClientComponentAc.hpp"
 
 namespace Drv {
 
-class TcpClientComponentImpl : public ByteStreamDriverModelComponentBase, public SocketReadTask {
+class TcpClientComponentImpl : public TcpClientComponentBase, public SocketComponentHelper {
   public:
     // ----------------------------------------------------------------------
     // Construction, initialization, and destruction
@@ -32,17 +32,10 @@ class TcpClientComponentImpl : public ByteStreamDriverModelComponentBase, public
      */
     TcpClientComponentImpl(const char* const compName);
 
-
-    /**
-     * \brief Initialize this component
-     * \param instance: instance number of this component
-     */
-    void init(const NATIVE_INT_TYPE instance = 0);
-
     /**
      * \brief Destroy the component
      */
-    ~TcpClientComponentImpl(void);
+    ~TcpClientComponentImpl();
 
     // ----------------------------------------------------------------------
     // Helper methods to start and stop socket
@@ -52,7 +45,7 @@ class TcpClientComponentImpl : public ByteStreamDriverModelComponentBase, public
      * \brief Configures the TcpClient settings but does not open the connection
      *
      * The TcpClientComponent needs to connect to a remote TCP server. This call configures the hostname, port and send
-     * timeouts for that socket connection. This call should be preformed on system startup before recv or send
+     * timeouts for that socket connection. This call should be performed on system startup before recv or send
      * are called. Note: hostname must be a dot-notation IP address of the form "x.x.x.x". DNS translation is left up
      * to the user.
      *
@@ -61,12 +54,14 @@ class TcpClientComponentImpl : public ByteStreamDriverModelComponentBase, public
      * \param send_timeout_seconds: send timeout seconds component. Defaults to: SOCKET_TIMEOUT_SECONDS
      * \param send_timeout_microseconds: send timeout microseconds component. Must be less than 1000000. Defaults to:
      * SOCKET_TIMEOUT_MICROSECONDS
+     * \param buffer_size: size of the buffer to be allocated. Defaults to 1024.
      * \return status of the configure
      */
     SocketIpStatus configure(const char* hostname,
                              const U16 port,
                              const U32 send_timeout_seconds = SOCKET_SEND_TIMEOUT_SECONDS,
-                             const U32 send_timeout_microseconds = SOCKET_SEND_TIMEOUT_MICROSECONDS);
+                             const U32 send_timeout_microseconds = SOCKET_SEND_TIMEOUT_MICROSECONDS,
+                             FwSizeType buffer_size = 1024);
 
   PROTECTED:
     // ----------------------------------------------------------------------
@@ -86,7 +81,7 @@ class TcpClientComponentImpl : public ByteStreamDriverModelComponentBase, public
     /**
      * \brief returns a buffer to fill with data
      *
-     * Gets a reference to the a buffer to fill with data. This allows the component to determine how to provide a
+     * Gets a reference to a buffer to fill with data. This allows the component to determine how to provide a
      * buffer and the socket read task just fills said buffer.
      *
      * \return Fw::Buffer to fill with data
@@ -94,7 +89,7 @@ class TcpClientComponentImpl : public ByteStreamDriverModelComponentBase, public
     Fw::Buffer getBuffer();
 
     /**
-     * \brief sends a buffer to filled with data
+     * \brief sends a buffer to be filled with data
      *
      * Sends the buffer gotten by getBuffer that has now been filled with data. This is used to delegate to the
      * component how to send back the buffer. Ignores buffers with error status error.
@@ -132,14 +127,10 @@ class TcpClientComponentImpl : public ByteStreamDriverModelComponentBase, public
      */
     Drv::SendStatus send_handler(const NATIVE_INT_TYPE portNum, Fw::Buffer& fwBuffer);
 
-    /**
-     * \brief **not supported**
-     *
-     * IP based ByteStreamDrivers don't support polling.
-     */
-    Drv::PollStatus poll_handler(const NATIVE_INT_TYPE portNum, Fw::Buffer& fwBuffer);
-
     Drv::TcpClientSocket m_socket; //!< Socket implementation
+
+    // Member variable to store the buffer size
+    FwSizeType m_allocation_size;
 };
 
 }  // end namespace Drv

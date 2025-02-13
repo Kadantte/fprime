@@ -39,16 +39,6 @@ namespace Svc {
             //!
             //!  \param name the component instance name
             CommandDispatcherImpl(const char* name);
-            //!  \brief Component initialization routine
-            //!
-            //!  The initialization function calls the initialization
-            //!  routine for the base class.
-            //!
-            //!  \param queueDepth the depth of the message queue for the component
-            void init(
-                    NATIVE_INT_TYPE queueDepth, /*!< The queue depth*/
-                    NATIVE_INT_TYPE instance /*!< The instance number*/
-                    ); //!< initialization function
             //!  \brief Component destructor
             //!
             //!  The destructor for this component is empty
@@ -64,7 +54,7 @@ namespace Svc {
             //!  \param opCode the opcode of the completed command.
             //!  \param cmdSeq the sequence number assigned to the command when it was dispatched
             //!  \param response the completion status of the command
-            void compCmdStat_handler(NATIVE_INT_TYPE portNum, FwOpcodeType opCode, U32 cmdSeq, Fw::CommandResponse response);
+            void compCmdStat_handler(NATIVE_INT_TYPE portNum, FwOpcodeType opCode, U32 cmdSeq, const Fw::CmdResponse &response);
             //!  \brief component command buffer handler
             //!
             //!  The command buffer handler is called to submit a new
@@ -101,7 +91,7 @@ namespace Svc {
             void CMD_NO_OP_cmdHandler(FwOpcodeType opCode, U32 cmdSeq);
             //!  \brief NO_OP with string command handler
             //!
-            //!  A test command that receives a string an sends an event
+            //!  A test command that receives a string and sends an event
             //!  with the string as an argument
             //!
             //!  \param opCode the NO_OP_STRING opcode.
@@ -153,7 +143,7 @@ namespace Svc {
             //! but are not yet complete. When a new command opcode is received,
             //! the status port that would be used to report the completion status
             //! is checked. If it is connected, then an entry is placed in this table.
-            //! The "used" flag is set, and the "seq" member is set to the the
+            //! The "used" flag is set, and the "seq" member is set to the
             //! assigned sequence number for the command. The "opCode" field is
             //! used for the opcode, and the "callerPort" field is used to store
             //! the port number of the caller so the status can be reported back to
@@ -167,7 +157,7 @@ namespace Svc {
                     NATIVE_INT_TYPE callerPort; //!< port command source port
             } m_sequenceTracker[CMD_DISPATCHER_SEQUENCER_TABLE_SIZE]; //!< sequence tracking port for command completions;
 
-            I32 m_seq; //!< current command sequence number
+            U32 m_seq; //!< current command sequence number
 
             U32 m_numCmdsDispatched; //!< number of commands dispatched
             U32 m_numCmdErrors; //!< number of commands with an error

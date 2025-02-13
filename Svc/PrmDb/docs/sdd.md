@@ -1,9 +1,8 @@
-\page SvcPrmDbComponent Svc::PrmDb Component
 # Svc::PrmDb Component
 
 ## 1. Introduction
 
-The `Svc::PrmDb` Component is used to store parameter values used by other components. The values are stored in serialized form. During initialization, `Svc::PrmDb` loads a set of parameters from a file, and stores the values in a table based on the parameter ID. Components that need parameters request their values during initialization after they have been loaded. Components occasionally receive updates to parameter values via a command, and the new values will be send to `Svc::PrmDb`. A command will save the copy in memory back to the file.
+The `Svc::PrmDb` Component is used to store parameter values used by other components. The values are stored in serialized form. During initialization, `Svc::PrmDb` loads a set of parameters from a file, and stores the values in a table based on the parameter ID. Components that need parameters request their values during initialization after they have been loaded. Components occasionally receive updates to parameter values via a command, and the new values will be sent to `Svc::PrmDb`. A command will save the copy in memory back to the file.
 
 ## 2. Requirements
 
@@ -32,8 +31,8 @@ The `Svc::PrmDb` component uses the following port types:
 
 Port | Name | Direction | Type | Usage
 ---- | ---- | --------- | ---- | -----
-[`Fw::PrmGet`](../../../Fw/Prm/docs/sdd.html) | getPrm | Input | Synchronous | Get a parameter
-[`Fw::PrmSet`](../../../Fw/Prm/docs/sdd.html) | setPrm | Input | Asynchronous | Update a parameter
+[`Fw::PrmGet`](../../../Fw/Prm/docs/sdd.md) | getPrm | Input | Synchronous | Get a parameter
+[`Fw::PrmSet`](../../../Fw/Prm/docs/sdd.md) | setPrm | Input | Asynchronous | Update a parameter
 
 #### 3.2 Functional Description
 
@@ -82,11 +81,11 @@ This diagram shows the scenario where parameters are saved to a file.
 
 ## 4. Module Checklists
 
-Document | Link
--------- | ----
-Design Checklist | [Link](Checklist_Design.xlsx)
-Code Checklist | [Link](Checklist_Code.xlsx)
-Unit Test Checklist | [Link](Checklist_Unit_Test.xlsx)
+Checklist |
+-------- |
+[Design](Checklist_Design.xlsx) |
+[Code](Checklist_Code.xlsx) |
+[Unit Test](Checklist_Unit_Test.xls) |
 
 ## 5. Dictionary
 
